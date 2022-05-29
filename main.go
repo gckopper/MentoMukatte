@@ -2,8 +2,8 @@ package main
 
 import (
 	"crypto/rand"
-	"encoding/json"
 	"fmt"
+	"html/template"
 	"log"
 	"math/big"
 	"net/http"
@@ -58,10 +58,14 @@ func generalHandlerFunc(w http.ResponseWriter, r *http.Request) {
 		userCookie = &newCookie
 	}
 	sala := r.URL.Query().Get("sala")
+	delete := r.URL.Query().Get("delete")
+	if delete == "yes" {
+		deleteHandlerFunc(&w, r)
+	}
 	if sala != "" {
 		salaHandlerFunc(&w, r, userCookie, sala)
 	} else {
-		http.FileServer(http.Dir("./")).ServeHTTP(w, r)
+		http.FileServer(http.Dir(".\\Cara-a-cara\\")).ServeHTTP(w, r)
 	}
 }
 
@@ -72,6 +76,7 @@ func salaHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 	cards := Cards{}
 	userUUID, err := uuid.Parse(usercookie.Value)
 	if err != nil {
+		log.Println(err)
 		(*w).WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -90,7 +95,7 @@ func salaHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 				missingPlayer = i
 			}
 		}
-		if i == len(sala.users) && alreadyUser {
+		if i == len(sala.users) && !alreadyUser {
 			(*w).Write([]byte("Modo espectador ainda não implementado, peça para alguem compartilhar a tela."))
 			return
 		}
@@ -102,12 +107,14 @@ func salaHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 		}
 		imagens, err := os.ReadDir("./Cara-a-cara/img/")
 		if err != nil || len(imagens) < len(sala.images) {
+			log.Println(err)
 			(*w).WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		for i := len(imagens) - 1; i > 0; i-- {
 			j, err := rand.Int(rand.Reader, big.NewInt(int64(i)))
 			if err != nil {
+				log.Println(err)
 				(*w).WriteHeader(http.StatusInternalServerError)
 				return
 			}
@@ -125,12 +132,14 @@ func salaHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 	} else {
 		i, err := rand.Int(rand.Reader, big.NewInt(int64(len(sala.images))))
 		if err != nil {
+			log.Println(err)
 			(*w).WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		sala.users[missingPlayer].img = sala.images[int(i.Int64())]
 		sala.users[missingPlayer].uuid = userUUID
 		if err != nil {
+			log.Println(err)
 			(*w).WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -139,13 +148,42 @@ func salaHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 			YourCard: sala.users[missingPlayer].img,
 		}
 	}
-	imagesJson, err := json.Marshal(cards)
+	t, err := template.ParseFiles("Cara-a-cara/index.gohtml")
 	if err != nil {
+		log.Println(err)
+		(*w).WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	err = t.Execute((*w), cards)
+	if err != nil {
+		log.Println(err)
 		(*w).WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	salas[sala.name] = sala
-	(*w).Write(imagesJson)
-	(*w).Header().Add("Content-Type", "application/json")
-	(*w).WriteHeader(http.StatusOK)
+
+}
+
+func deleteHandlerFunc(w *http.ResponseWriter, r *http.Request) {
+	userCookie, err := r.Cookie("SessionCookie") // Try to grab the cookie named SessionCookie
+	if err == http.ErrNoCookie {
+		(*w).WriteHeader(http.StatusBadRequest)
+	}
+	if err != http.ErrNoCookie && err == nil {
+		(*w).WriteHeader(http.StatusInternalServerError)
+	}
+	userUUID, err := uuid.Parse(userCookie.Value)
+	if err != nil {
+		log.Println(err)
+		(*w).WriteHeader(http.StatusBadRequest)
+		return
+	}
+	for _, sala := range salas {
+		for _, v := range sala.users {
+			if v.uuid == userUUID {
+				delete(salas, sala.name)
+				break
+			}
+		}
+	}
 }
