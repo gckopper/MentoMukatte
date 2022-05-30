@@ -4,10 +4,12 @@ import (
 	"crypto/rand"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"math/big"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,6 +18,7 @@ import (
 type User struct {
 	img  string
 	uuid uuid.UUID
+	dead int
 }
 
 type Sala struct {
@@ -33,8 +36,9 @@ var salas = make(map[string]Sala)
 
 func main() {
 	println("Hello, World!")
-	http.Handle("/", http.HandlerFunc(generalHandlerFunc)) //http.FileServer(http.Dir("./"))
-	err := http.ListenAndServe(fmt.Sprint("localhost:", 25565), nil)
+	http.Handle("/", http.HandlerFunc(generalHandlerFunc))      //http.FileServer(http.Dir("./"))
+	http.Handle("/status", http.HandlerFunc(statusHandlerFunc)) //http.FileServer(http.Dir("./"))
+	err := http.ListenAndServe(fmt.Sprint("192.168.88.15:", 25565), nil)
 	if err != nil {
 		err = log.Output(0, fmt.Sprintln(err))
 		if err != nil {
@@ -47,12 +51,12 @@ func generalHandlerFunc(w http.ResponseWriter, r *http.Request) {
 	userCookie, err := r.Cookie("SessionCookie") // Try to grab the cookie named SessionCookie
 	if err == http.ErrNoCookie {
 		newCookie := http.Cookie{
-			Secure:   true,
-			Name:     "SessionCookie",
-			Value:    uuid.New().String(),
-			MaxAge:   31536000,
-			Expires:  time.Now().Add(time.Hour * 24 * 365), // Give it a year of life
-			SameSite: http.SameSiteStrictMode,              // Set SameSite to strict as a way of mitigating attacks
+			Secure:  false,
+			Name:    "SessionCookie",
+			Value:   uuid.New().String(),
+			MaxAge:  31536000,
+			Expires: time.Now().Add(time.Hour * 24 * 365), // Give it a year of life
+			//SameSite: http.SameSiteStrictMode,              // Set SameSite to strict as a way of mitigating attacks
 		}
 		http.SetCookie(w, &newCookie)
 		userCookie = &newCookie
@@ -148,7 +152,7 @@ func salaHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 			YourCard: sala.users[missingPlayer].img,
 		}
 	}
-	t, err := template.ParseFiles("Cara-a-cara/index.gohtml")
+	t, err := template.ParseFiles("Cara-a-cara/index.html")
 	if err != nil {
 		log.Println(err)
 		(*w).WriteHeader(http.StatusInternalServerError)
@@ -169,7 +173,7 @@ func deleteHandlerFunc(w *http.ResponseWriter, r *http.Request) {
 	if err == http.ErrNoCookie {
 		(*w).WriteHeader(http.StatusBadRequest)
 	}
-	if err != http.ErrNoCookie && err == nil {
+	if err != http.ErrNoCookie && err != nil {
 		(*w).WriteHeader(http.StatusInternalServerError)
 	}
 	userUUID, err := uuid.Parse(userCookie.Value)
@@ -184,6 +188,61 @@ func deleteHandlerFunc(w *http.ResponseWriter, r *http.Request) {
 				delete(salas, sala.name)
 				break
 			}
+		}
+	}
+}
+
+func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
+	userCookie, err := r.Cookie("SessionCookie") // Try to grab the cookie named SessionCookie
+	if err == http.ErrNoCookie {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("No cookie"))
+		return
+	}
+	if err != http.ErrNoCookie && err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	userUUID, err := uuid.Parse(userCookie.Value)
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	nomeDaSala := r.URL.Query().Get("sala")
+	if nomeDaSala == "" {
+		log.Println("não mandou o nome da sala")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	sala, existe := salas[nomeDaSala]
+	if !existe {
+		log.Println("A sala não existe")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	for i, v := range sala.users {
+		if v.uuid == userUUID {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				log.Println(err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			sala.users[i].dead, err = strconv.Atoi(string(body))
+			if err != nil {
+				log.Println(err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if i == 0 {
+				w.Write([]byte(fmt.Sprint(sala.users[1].dead)))
+			} else {
+				w.Write([]byte(fmt.Sprint(sala.users[0].dead)))
+			}
+			salas[sala.name] = sala
+			break
 		}
 	}
 }
