@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"flag"
 	"fmt"
 	"html/template"
 	"io"
@@ -35,10 +36,12 @@ type Cards struct {
 var salas = make(map[string]Sala)
 
 func main() {
+	port := flag.Int("p", 3669, "Port in which the updater will listen")
+	flag.Parse()
 	println("Hello, World!")
 	http.Handle("/", http.HandlerFunc(generalHandlerFunc))      //http.FileServer(http.Dir("./"))
 	http.Handle("/status", http.HandlerFunc(statusHandlerFunc)) //http.FileServer(http.Dir("./"))
-	err := http.ListenAndServe(fmt.Sprint("192.168.88.15:", 25565), nil)
+	err := http.ListenAndServe(fmt.Sprint("localhost:", *port), nil)
 	if err != nil {
 		err = log.Output(0, fmt.Sprintln(err))
 		if err != nil {
