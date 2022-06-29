@@ -68,6 +68,17 @@ func main() {
 }
 
 func generalHandlerFunc(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		err := log.Output(1, fmt.Sprint("Method not allowed in generalHandlerFunc: ", r.Method))
+		if err != nil {
+			log.Fatalf("COULD NOT WRITE TO LOG FILE")
+		}
+		return
+	}
+	w.Header().Add("X-Frame-Options", "DENY")
+	w.Header().Add("X-Content-Type-Options", "nosniff")
+	w.Header().Add("Content-Security-Policy", "default-src 'self'")
 	userCookie, err := r.Cookie("SessionCookie") // Try to grab the cookie named SessionCookie
 	if err != nil && err != http.ErrNoCookie {
 		err := log.Output(1, fmt.Sprint(err))
@@ -77,12 +88,13 @@ func generalHandlerFunc(w http.ResponseWriter, r *http.Request) {
 	}
 	if err == http.ErrNoCookie {
 		newCookie := http.Cookie{
-			Secure:  false,
-			Name:    "SessionCookie",
-			Value:   uuid.New().String(),
-			MaxAge:  31536000,
-			Expires: time.Now().Add(time.Hour * 24 * 365), // Give it a year of life
-			//SameSite: http.SameSiteStrictMode,              // Set SameSite to strict as a way of mitigating attacks
+			HttpOnly: true,
+			Secure:   true,
+			Name:     "SessionCookie",
+			Value:    uuid.New().String(),
+			MaxAge:   31536000,
+			Expires:  time.Now().Add(time.Hour * 24 * 365), // Give it a year of life
+			SameSite: http.SameSiteStrictMode,              // Set SameSite to strict as a way of mitigating attacks
 		}
 		http.SetCookie(w, &newCookie)
 		userCookie = &newCookie
@@ -246,13 +258,31 @@ func deleteHandlerFunc(w *http.ResponseWriter, r *http.Request) {
 		for _, v := range sala.users {
 			if v.uuid == userUUID {
 				delete(salas, sala.name)
-				break
+				(*w).WriteHeader(http.StatusTemporaryRedirect)
+				(*w).Header().Set("Location", fmt.Sprint("/sala=", sala.name))
+				return
 			}
 		}
 	}
+	err = log.Output(1, "Usuario não está na sala e não pode ser deletado")
+	if err != nil {
+		log.Fatalf("COULD NOT WRITE TO LOG FILE")
+	}
+	(*w).WriteHeader(http.StatusForbidden)
 }
 
 func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		err := log.Output(1, fmt.Sprint("Method not allowed in generalHandlerFunc: ", r.Method))
+		if err != nil {
+			log.Fatalf("COULD NOT WRITE TO LOG FILE")
+		}
+		return
+	}
+	w.Header().Add("X-Frame-Options", "DENY")
+	w.Header().Add("Content-Security-Policy", "default-src 'self'")
+	w.Header().Add("X-Content-Type-Options", "nosniff")
 	userCookie, err := r.Cookie("SessionCookie") // Try to grab the cookie named SessionCookie
 	if err == http.ErrNoCookie {
 		w.WriteHeader(http.StatusBadRequest)
@@ -324,7 +354,12 @@ func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
 				w.Write([]byte(fmt.Sprint(sala.users[0].dead)))
 			}
 			salas[sala.name] = sala
-			break
+			return
 		}
 	}
+	err = log.Output(1, "Usuario não está na sala")
+	if err != nil {
+		log.Fatalf("COULD NOT WRITE TO LOG FILE")
+	}
+	w.WriteHeader(http.StatusForbidden)
 }
