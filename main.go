@@ -22,7 +22,7 @@ type User struct {
 	dead int
 }
 
-type Sala struct {
+type Room struct {
 	name   string
 	users  [2]User
 	images [24]string
@@ -33,10 +33,10 @@ type Cards struct {
 	Images   [24]string
 }
 
-var salas = make(map[string]Sala)
+var rooms = make(map[string]Room)
 
 func main() {
-	port := flag.Int("p", 3669, "Port in which the updater will listen")
+	port := flag.Int("p", 3669, "Port in which the game server will listen")
 	flag.Parse()
 
 	// open a file
@@ -99,20 +99,20 @@ func generalHandlerFunc(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &newCookie)
 		userCookie = &newCookie
 	}
-	sala := r.URL.Query().Get("sala")
+	roomName := r.URL.Query().Get("sala")
 	delete := r.URL.Query().Get("delete")
 	if delete == "yes" {
 		deleteHandlerFunc(&w, r)
 	}
-	if sala != "" {
-		salaHandlerFunc(&w, r, userCookie, sala)
+	if roomName != "" {
+		roomHandlerFunc(&w, r, userCookie, roomName)
 	} else {
-		http.FileServer(http.Dir("Cara-a-cara/")).ServeHTTP(w, r)
+		http.FileServer(http.Dir("mento-mukatte-ui/")).ServeHTTP(w, r)
 	}
 }
 
-func salaHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.Cookie, nomeDaSala string) {
-	sala, existe := salas[nomeDaSala]
+func roomHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.Cookie, roomName string) {
+	room, existe := rooms[roomName]
 	missingPlayer := 0
 	alreadyUser := false
 	cards := Cards{}
@@ -127,31 +127,31 @@ func salaHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 	}
 	if existe {
 		i := 0
-		for i < len(sala.users) {
-			if sala.users[i].img == "" {
+		for i < len(room.users) {
+			if room.users[i].img == "" {
 				missingPlayer = i
 				break
 			}
 			i++
 		}
-		for i, v := range sala.users {
+		for i, v := range room.users {
 			if v.uuid == userUUID {
 				alreadyUser = true
 				missingPlayer = i
 			}
 		}
-		if i == len(sala.users) && !alreadyUser {
+		if i == len(room.users) && !alreadyUser {
 			(*w).Write([]byte("Modo espectador ainda não implementado, peça para alguem compartilhar a tela."))
 			return
 		}
 	} else {
-		sala = Sala{
-			name:   nomeDaSala,
+		room = Room{
+			name:   roomName,
 			users:  [2]User{},
 			images: [24]string{},
 		}
 		imagens, err := os.ReadDir("./Cara-a-cara/img/")
-		if err != nil || len(imagens) < len(sala.images) {
+		if err != nil || len(imagens) < len(room.images) {
 			err := log.Output(1, fmt.Sprint(err))
 			if err != nil {
 				log.Fatalf("COULD NOT WRITE TO LOG FILE")
@@ -171,17 +171,17 @@ func salaHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 			}
 			imagens[int(j.Int64())], imagens[i] = imagens[i], imagens[int(j.Int64())]
 		}
-		for i := range sala.images {
-			sala.images[i] = imagens[i].Name()
+		for i := range room.images {
+			room.images[i] = imagens[i].Name()
 		}
 	}
 	if alreadyUser {
 		cards = Cards{
-			Images:   sala.images,
-			YourCard: sala.users[missingPlayer].img,
+			Images:   room.images,
+			YourCard: room.users[missingPlayer].img,
 		}
 	} else {
-		i, err := rand.Int(rand.Reader, big.NewInt(int64(len(sala.images))))
+		i, err := rand.Int(rand.Reader, big.NewInt(int64(len(room.images))))
 		if err != nil {
 			err := log.Output(1, fmt.Sprint(err))
 			if err != nil {
@@ -190,8 +190,8 @@ func salaHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 			(*w).WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		sala.users[missingPlayer].img = sala.images[int(i.Int64())]
-		sala.users[missingPlayer].uuid = userUUID
+		room.users[missingPlayer].img = room.images[int(i.Int64())]
+		room.users[missingPlayer].uuid = userUUID
 		if err != nil {
 			err := log.Output(1, fmt.Sprint(err))
 			if err != nil {
@@ -201,11 +201,11 @@ func salaHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 			return
 		}
 		cards = Cards{
-			Images:   sala.images,
-			YourCard: sala.users[missingPlayer].img,
+			Images:   room.images,
+			YourCard: room.users[missingPlayer].img,
 		}
 	}
-	t, err := template.ParseFiles("Cara-a-cara/index.html")
+	t, err := template.ParseFiles("mento-mukatte-ui/index.html")
 	if err != nil {
 		err := log.Output(1, fmt.Sprint(err))
 		if err != nil {
@@ -223,7 +223,7 @@ func salaHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 		(*w).WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	salas[sala.name] = sala
+	rooms[room.name] = room
 
 }
 
@@ -254,12 +254,12 @@ func deleteHandlerFunc(w *http.ResponseWriter, r *http.Request) {
 		(*w).WriteHeader(http.StatusBadRequest)
 		return
 	}
-	for _, sala := range salas {
-		for _, v := range sala.users {
+	for _, room := range rooms {
+		for _, v := range room.users {
 			if v.uuid == userUUID {
-				delete(salas, sala.name)
+				delete(rooms, room.name)
 				(*w).WriteHeader(http.StatusTemporaryRedirect)
-				(*w).Header().Set("Location", fmt.Sprint("/sala=", sala.name))
+				(*w).Header().Set("Location", fmt.Sprint("/sala=", room.name))
 				return
 			}
 		}
@@ -310,8 +310,8 @@ func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	nomeDaSala := r.URL.Query().Get("sala")
-	if nomeDaSala == "" {
+	roomName := r.URL.Query().Get("sala")
+	if roomName == "" {
 		err := log.Output(1, "Não foi passado o nome da sala")
 		if err != nil {
 			log.Fatalf("COULD NOT WRITE TO LOG FILE")
@@ -319,7 +319,7 @@ func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	sala, existe := salas[nomeDaSala]
+	room, existe := rooms[roomName]
 	if !existe {
 		err := log.Output(1, "A sala não existe")
 		if err != nil {
@@ -328,7 +328,7 @@ func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	for i, v := range sala.users {
+	for i, v := range room.users {
 		if v.uuid == userUUID {
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
@@ -339,7 +339,7 @@ func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			sala.users[i].dead, err = strconv.Atoi(string(body))
+			room.users[i].dead, err = strconv.Atoi(string(body))
 			if err != nil {
 				err := log.Output(1, fmt.Sprint(err))
 				if err != nil {
@@ -349,11 +349,11 @@ func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if i == 0 {
-				w.Write([]byte(fmt.Sprint(sala.users[1].dead)))
+				w.Write([]byte(fmt.Sprint(room.users[1].dead)))
 			} else {
-				w.Write([]byte(fmt.Sprint(sala.users[0].dead)))
+				w.Write([]byte(fmt.Sprint(room.users[0].dead)))
 			}
-			salas[sala.name] = sala
+			rooms[room.name] = room
 			return
 		}
 	}
