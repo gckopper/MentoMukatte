@@ -60,20 +60,14 @@ func main() {
 	http.Handle("/status", http.HandlerFunc(statusHandlerFunc)) //http.FileServer(http.Dir("./"))
 	err = http.ListenAndServe(fmt.Sprint("localhost:", *port), nil)
 	if err != nil {
-		err := log.Output(1, fmt.Sprint(err))
-		if err != nil {
-			log.Fatalf("COULD NOT WRITE TO LOG FILE")
-		}
+		log.Println(err)
 	}
 }
 
 func generalHandlerFunc(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		w.WriteHeader(http.StatusMethodNotAllowed)
-		err := log.Output(1, fmt.Sprint("Method not allowed in generalHandlerFunc: ", r.Method))
-		if err != nil {
-			log.Fatalf("COULD NOT WRITE TO LOG FILE")
-		}
+		log.Println("Method not allowed in generalHandlerFunc: ", r.Method)
 		return
 	}
 	w.Header().Add("X-Frame-Options", "DENY")
@@ -81,10 +75,7 @@ func generalHandlerFunc(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Security-Policy", "default-src 'self'")
 	userCookie, err := r.Cookie("SessionCookie") // Try to grab the cookie named SessionCookie
 	if err != nil && err != http.ErrNoCookie {
-		err := log.Output(1, fmt.Sprint(err))
-		if err != nil {
-			log.Fatalf("COULD NOT WRITE TO LOG FILE")
-		}
+		log.Println(err)
 	}
 	if err == http.ErrNoCookie {
 		newCookie := http.Cookie{
@@ -118,10 +109,7 @@ func roomHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 	cards := Cards{}
 	userUUID, err := uuid.Parse(usercookie.Value)
 	if err != nil {
-		err := log.Output(1, fmt.Sprint(err))
-		if err != nil {
-			log.Fatalf("COULD NOT WRITE TO LOG FILE")
-		}
+		log.Println(err)
 		(*w).WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -152,20 +140,14 @@ func roomHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 		}
 		imagens, err := os.ReadDir("./Cara-a-cara/img/")
 		if err != nil || len(imagens) < len(room.images) {
-			err := log.Output(1, fmt.Sprint(err))
-			if err != nil {
-				log.Fatalf("COULD NOT WRITE TO LOG FILE")
-			}
+			log.Println(err)
 			(*w).WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		for i := len(imagens) - 1; i > 0; i-- {
 			j, err := rand.Int(rand.Reader, big.NewInt(int64(i)))
 			if err != nil {
-				err := log.Output(1, fmt.Sprint(err))
-				if err != nil {
-					log.Fatalf("COULD NOT WRITE TO LOG FILE")
-				}
+				log.Println(err)
 				(*w).WriteHeader(http.StatusInternalServerError)
 				return
 			}
@@ -183,20 +165,14 @@ func roomHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 	} else {
 		i, err := rand.Int(rand.Reader, big.NewInt(int64(len(room.images))))
 		if err != nil {
-			err := log.Output(1, fmt.Sprint(err))
-			if err != nil {
-				log.Fatalf("COULD NOT WRITE TO LOG FILE")
-			}
+			log.Println(err)
 			(*w).WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		room.users[missingPlayer].img = room.images[int(i.Int64())]
 		room.users[missingPlayer].uuid = userUUID
 		if err != nil {
-			err := log.Output(1, fmt.Sprint(err))
-			if err != nil {
-				log.Fatalf("COULD NOT WRITE TO LOG FILE")
-			}
+			log.Println(err)
 			(*w).WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -207,19 +183,13 @@ func roomHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 	}
 	t, err := template.ParseFiles("mento-mukatte-ui/index.html")
 	if err != nil {
-		err := log.Output(1, fmt.Sprint(err))
-		if err != nil {
-			log.Fatalf("COULD NOT WRITE TO LOG FILE")
-		}
+		log.Println(err)
 		(*w).WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	err = t.Execute((*w), cards)
 	if err != nil {
-		err := log.Output(1, fmt.Sprint(err))
-		if err != nil {
-			log.Fatalf("COULD NOT WRITE TO LOG FILE")
-		}
+		log.Println(err)
 		(*w).WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -230,27 +200,18 @@ func roomHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 func deleteHandlerFunc(w *http.ResponseWriter, r *http.Request) {
 	userCookie, err := r.Cookie("SessionCookie") // Try to grab the cookie named SessionCookie
 	if err == http.ErrNoCookie {
+		log.Println(err)
 		(*w).WriteHeader(http.StatusBadRequest)
-		err := log.Output(1, fmt.Sprint(err))
-		if err != nil {
-			log.Fatalf("COULD NOT WRITE TO LOG FILE")
-		}
 		return
 	}
 	if err != http.ErrNoCookie && err != nil {
+		log.Println(err)
 		(*w).WriteHeader(http.StatusInternalServerError)
-		err := log.Output(1, fmt.Sprint(err))
-		if err != nil {
-			log.Fatalf("COULD NOT WRITE TO LOG FILE")
-		}
 		return
 	}
 	userUUID, err := uuid.Parse(userCookie.Value)
 	if err != nil {
-		err := log.Output(1, fmt.Sprint(err))
-		if err != nil {
-			log.Fatalf("COULD NOT WRITE TO LOG FILE")
-		}
+		log.Println(err)
 		(*w).WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -264,20 +225,14 @@ func deleteHandlerFunc(w *http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	err = log.Output(1, "Usuario não está na sala e não pode ser deletado")
-	if err != nil {
-		log.Fatalf("COULD NOT WRITE TO LOG FILE")
-	}
+	log.Println("Usuario não está na sala e não pode ser deletado")
 	(*w).WriteHeader(http.StatusForbidden)
 }
 
 func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
+		log.Println("Method not allowed in statusHandlerFunc: ", r.Method)
 		w.WriteHeader(http.StatusMethodNotAllowed)
-		err := log.Output(1, fmt.Sprint("Method not allowed in generalHandlerFunc: ", r.Method))
-		if err != nil {
-			log.Fatalf("COULD NOT WRITE TO LOG FILE")
-		}
 		return
 	}
 	w.Header().Add("X-Frame-Options", "DENY")
@@ -287,44 +242,29 @@ func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
 	if err == http.ErrNoCookie {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("No cookie"))
-		err := log.Output(1, fmt.Sprint(err))
-		if err != nil {
-			log.Fatalf("COULD NOT WRITE TO LOG FILE")
-		}
+		log.Println(err)
 		return
 	}
 	if err != http.ErrNoCookie && err != nil {
-		err := log.Output(1, fmt.Sprint(err))
-		if err != nil {
-			log.Fatalf("COULD NOT WRITE TO LOG FILE")
-		}
+		log.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	userUUID, err := uuid.Parse(userCookie.Value)
 	if err != nil {
-		err := log.Output(1, fmt.Sprint(err))
-		if err != nil {
-			log.Fatalf("COULD NOT WRITE TO LOG FILE")
-		}
+		log.Println(err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	roomName := r.URL.Query().Get("sala")
 	if roomName == "" {
-		err := log.Output(1, "Não foi passado o nome da sala")
-		if err != nil {
-			log.Fatalf("COULD NOT WRITE TO LOG FILE")
-		}
+		log.Println("Não foi passado o nome da sala")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	room, existe := rooms[roomName]
 	if !existe {
-		err := log.Output(1, "A sala não existe")
-		if err != nil {
-			log.Fatalf("COULD NOT WRITE TO LOG FILE")
-		}
+		log.Println("A sala não existe")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -332,19 +272,13 @@ func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
 		if v.uuid == userUUID {
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
-				err := log.Output(1, fmt.Sprint(err))
-				if err != nil {
-					log.Fatalf("COULD NOT WRITE TO LOG FILE")
-				}
+				log.Println(err)
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
 			room.users[i].dead, err = strconv.Atoi(string(body))
 			if err != nil {
-				err := log.Output(1, fmt.Sprint(err))
-				if err != nil {
-					log.Fatalf("COULD NOT WRITE TO LOG FILE")
-				}
+				log.Println(err)
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
@@ -357,9 +291,6 @@ func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	err = log.Output(1, "Usuario não está na sala")
-	if err != nil {
-		log.Fatalf("COULD NOT WRITE TO LOG FILE")
-	}
+	log.Println("Usuario não está na sala")
 	w.WriteHeader(http.StatusForbidden)
 }
