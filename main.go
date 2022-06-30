@@ -2,24 +2,24 @@ package main
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"html/template"
-	"io"
 	"log"
 	"math/big"
 	"net/http"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 )
 
 type User struct {
 	img  string
 	uuid uuid.UUID
-	dead int
+	dead uint64
 }
 
 type Sala struct {
@@ -33,7 +33,7 @@ type Cards struct {
 	Images   [24]string
 }
 
-var salas = make(map[string]Sala)
+var salas = make(map[string]*Sala)
 
 func main() {
 	port := flag.Int("p", 3669, "Port in which the updater will listen")
@@ -145,7 +145,7 @@ func salaHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 			return
 		}
 	} else {
-		sala = Sala{
+		sala = &Sala{
 			name:   nomeDaSala,
 			users:  [2]User{},
 			images: [24]string{},
@@ -223,8 +223,6 @@ func salaHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 		(*w).WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	salas[sala.name] = sala
-
 }
 
 func deleteHandlerFunc(w *http.ResponseWriter, r *http.Request) {
@@ -271,8 +269,11 @@ func deleteHandlerFunc(w *http.ResponseWriter, r *http.Request) {
 	(*w).WriteHeader(http.StatusForbidden)
 }
 
+var upgrader = websocket.Upgrader{} // use default options
+
 func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
+	c, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		err := log.Output(1, fmt.Sprint("Method not allowed in generalHandlerFunc: ", r.Method))
 		if err != nil {
@@ -280,9 +281,7 @@ func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	w.Header().Add("X-Frame-Options", "DENY")
-	w.Header().Add("Content-Security-Policy", "default-src 'self'")
-	w.Header().Add("X-Content-Type-Options", "nosniff")
+	defer c.Close()
 	userCookie, err := r.Cookie("SessionCookie") // Try to grab the cookie named SessionCookie
 	if err == http.ErrNoCookie {
 		w.WriteHeader(http.StatusBadRequest)
@@ -330,7 +329,22 @@ func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
 	}
 	for i, v := range sala.users {
 		if v.uuid == userUUID {
-			body, err := io.ReadAll(r.Body)
+			for {
+				mt, message, err := c.ReadMessage()
+				if err != nil {
+					log.Println("read:", err)
+					break
+				}
+				if mt == websocket.BinaryMessage {
+					sala.users[i].dead = binary.BigEndian.Uint64(message)
+				}
+				err = c.WriteMessage(mt, message)
+				if err != nil {
+					log.Println("write:", err)
+					break
+				}
+			}
+			/*body, err := io.ReadAll(r.Body)
 			if err != nil {
 				err := log.Output(1, fmt.Sprint(err))
 				if err != nil {
@@ -354,7 +368,7 @@ func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
 				w.Write([]byte(fmt.Sprint(sala.users[0].dead)))
 			}
 			salas[sala.name] = sala
-			return
+			return */
 		}
 	}
 	err = log.Output(1, "Usuario não está na sala")
@@ -362,4 +376,25 @@ func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
 		log.Fatalf("COULD NOT WRITE TO LOG FILE")
 	}
 	w.WriteHeader(http.StatusForbidden)
+}
+
+func (c *Client) writePump(conn websocket.Conn) {
+	defer func() {
+		conn.Close()
+	}()
+	for {
+		mt, message, err := c.ReadMessage()
+		if err != nil {
+			log.Println("read:", err)
+			break
+		}
+		if mt == websocket.BinaryMessage {
+			sala.users[i].dead = binary.BigEndian.Uint64(message)
+		}
+		err = c.WriteMessage(mt, message)
+		if err != nil {
+			log.Println("write:", err)
+			break
+		}
+	}
 }
