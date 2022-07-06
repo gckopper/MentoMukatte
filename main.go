@@ -78,7 +78,8 @@ func generalHandlerFunc(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Add("X-Frame-Options", "DENY")
 	w.Header().Add("X-Content-Type-Options", "nosniff")
-	w.Header().Add("Content-Security-Policy", "default-src 'self'")
+	w.Header().Add("Content-Security-Policy", "default-src 'self'; script-src 'self'")
+	w.Header().Add("Strict-Transport-Security", "max-age=63072000;")
 	userCookie, err := r.Cookie("SessionCookie") // Try to grab the cookie named SessionCookie
 	if err != nil && err != http.ErrNoCookie {
 		err := log.Output(1, fmt.Sprint(err))
@@ -358,7 +359,6 @@ func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
 func writePump(conn *websocket.Conn, write chan []byte) {
 	for {
 		dead := <-write
-		log.Println("new message!!")
 		w, err := conn.NextWriter(websocket.TextMessage)
 		if err != nil {
 			log.Println(err)
