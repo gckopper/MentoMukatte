@@ -2,24 +2,24 @@ package main
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"html/template"
-	"io"
 	"log"
 	"math/big"
 	"net/http"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 )
 
 type User struct {
 	img  string
 	uuid uuid.UUID
-	dead int
+	dead chan []byte
 }
 
 type Room struct {
@@ -72,7 +72,8 @@ func generalHandlerFunc(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Add("X-Frame-Options", "DENY")
 	w.Header().Add("X-Content-Type-Options", "nosniff")
-	w.Header().Add("Content-Security-Policy", "default-src 'self'")
+	w.Header().Add("Content-Security-Policy", "default-src 'self'; script-src 'self'")
+	w.Header().Add("Strict-Transport-Security", "max-age=63072000;")
 	userCookie, err := r.Cookie("SessionCookie") // Try to grab the cookie named SessionCookie
 	if err != nil && err != http.ErrNoCookie {
 		log.Println(err)
@@ -103,7 +104,7 @@ func generalHandlerFunc(w http.ResponseWriter, r *http.Request) {
 }
 
 func roomHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.Cookie, roomName string) {
-	room, existe := rooms[roomName]
+	room, exists := rooms[roomName]
 	missingPlayer := 0
 	alreadyUser := false
 	cards := Cards{}
@@ -113,7 +114,7 @@ func roomHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 		(*w).WriteHeader(http.StatusBadRequest)
 		return
 	}
-	if existe {
+	if exists {
 		i := 0
 		for i < len(room.users) {
 			if room.users[i].img == "" {
@@ -138,23 +139,23 @@ func roomHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 			users:  [2]User{},
 			images: [24]string{},
 		}
-		imagens, err := os.ReadDir("./Cara-a-cara/img/")
-		if err != nil || len(imagens) < len(room.images) {
+		images, err := os.ReadDir("./mento-mukatte-ui/img/")
+		if err != nil || len(images) < len(room.images) {
 			log.Println(err)
 			(*w).WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		for i := len(imagens) - 1; i > 0; i-- {
+		for i := len(images) - 1; i > 0; i-- {
 			j, err := rand.Int(rand.Reader, big.NewInt(int64(i)))
 			if err != nil {
 				log.Println(err)
 				(*w).WriteHeader(http.StatusInternalServerError)
 				return
 			}
-			imagens[int(j.Int64())], imagens[i] = imagens[i], imagens[int(j.Int64())]
+			images[int(j.Int64())], images[i] = images[i], images[int(j.Int64())]
 		}
 		for i := range room.images {
-			room.images[i] = imagens[i].Name()
+			room.images[i] = images[i].Name()
 		}
 	}
 	if alreadyUser {
@@ -229,6 +230,11 @@ func deleteHandlerFunc(w *http.ResponseWriter, r *http.Request) {
 	(*w).WriteHeader(http.StatusForbidden)
 }
 
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+}
+
 func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		log.Println("Method not allowed in statusHandlerFunc: ", r.Method)
@@ -262,35 +268,71 @@ func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	room, existe := rooms[roomName]
-	if !existe {
+	room, exists := rooms[roomName]
+	if !exists {
 		log.Println("A sala não existe")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	for i, v := range room.users {
 		if v.uuid == userUUID {
-			body, err := io.ReadAll(r.Body)
+			upgrader.CheckOrigin = func(r *http.Request) bool { return true }
+			c, err := upgrader.Upgrade(w, r, nil)
 			if err != nil {
 				log.Println(err)
-				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			room.users[i].dead, err = strconv.Atoi(string(body))
-			if err != nil {
-				log.Println(err)
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-			if i == 0 {
-				w.Write([]byte(fmt.Sprint(room.users[1].dead)))
+			//reader(c)
+			var write chan []byte
+			if room.users[-i+1].dead == nil {
+				write = make(chan []byte)
+				room.users[-i+1].dead = write
 			} else {
-				w.Write([]byte(fmt.Sprint(room.users[0].dead)))
+				write = room.users[-i+1].dead
 			}
-			rooms[room.name] = room
+			var read chan []byte
+			if room.users[i].dead == nil {
+				read = make(chan []byte)
+				room.users[i].dead = read
+			} else {
+				read = room.users[i].dead
+			}
+			go writePump(c, write)
+			go readPump(c, read)
+		}
+	}
+}
+
+func writePump(conn *websocket.Conn, write chan []byte) {
+	for {
+		dead := <-write
+		w, err := conn.NextWriter(websocket.TextMessage)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		w.Write([]byte(base64.StdEncoding.EncodeToString(dead)))
+		if err := w.Close(); err != nil {
+			log.Println(err)
 			return
 		}
 	}
-	log.Println("Usuario não está na sala")
-	w.WriteHeader(http.StatusForbidden)
+}
+
+func readPump(conn *websocket.Conn, read chan []byte) {
+	for {
+		mt, message, err := conn.ReadMessage()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		if mt == websocket.TextMessage {
+			b, err := base64.StdEncoding.DecodeString(string(message))
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			read <- b
+		}
+	}
 }
