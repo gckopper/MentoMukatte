@@ -56,8 +56,7 @@ func main() {
 	// assign it to the standard logger
 	log.SetOutput(logFile)
 
-	http.Handle("/", http.HandlerFunc(generalHandlerFunc))      //http.FileServer(http.Dir("./"))
-	http.Handle("/status", http.HandlerFunc(statusHandlerFunc)) //http.FileServer(http.Dir("./"))
+	http.Handle("/", http.HandlerFunc(generalHandlerFunc)) //http.FileServer(http.Dir("./"))
 	err = http.ListenAndServe(fmt.Sprint("localhost:", *port), nil)
 	if err != nil {
 		log.Println(err)
@@ -77,6 +76,8 @@ func generalHandlerFunc(w http.ResponseWriter, r *http.Request) {
 	userCookie, err := r.Cookie("SessionCookie") // Try to grab the cookie named SessionCookie
 	if err != nil && err != http.ErrNoCookie {
 		log.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 	if err == http.ErrNoCookie {
 		newCookie := http.Cookie{
@@ -92,15 +93,21 @@ func generalHandlerFunc(w http.ResponseWriter, r *http.Request) {
 		userCookie = &newCookie
 	}
 	roomName := r.URL.Query().Get("sala")
+	if r.URL.Path == "/status" {
+		statusHandlerFunc(&w, r, userCookie, roomName)
+		return
+	}
 	delete := r.URL.Query().Get("delete")
 	if delete == "yes" {
-		deleteHandlerFunc(&w, r)
+		deleteHandlerFunc(&w, r, userCookie)
+		return
 	}
 	if roomName != "" {
 		roomHandlerFunc(&w, r, userCookie, roomName)
-	} else {
-		http.FileServer(http.Dir("mento-mukatte-ui/")).ServeHTTP(w, r)
+		return
 	}
+	http.FileServer(http.Dir("mento-mukatte-ui/")).ServeHTTP(w, r)
+
 }
 
 func roomHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.Cookie, roomName string) {
@@ -198,18 +205,7 @@ func roomHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 
 }
 
-func deleteHandlerFunc(w *http.ResponseWriter, r *http.Request) {
-	userCookie, err := r.Cookie("SessionCookie") // Try to grab the cookie named SessionCookie
-	if err == http.ErrNoCookie {
-		log.Println(err)
-		(*w).WriteHeader(http.StatusBadRequest)
-		return
-	}
-	if err != http.ErrNoCookie && err != nil {
-		log.Println(err)
-		(*w).WriteHeader(http.StatusInternalServerError)
-		return
-	}
+func deleteHandlerFunc(w *http.ResponseWriter, r *http.Request, userCookie *http.Cookie) {
 	userUUID, err := uuid.Parse(userCookie.Value)
 	if err != nil {
 		log.Println(err)
@@ -234,54 +230,28 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 }
 
-func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		log.Println("Method not allowed in statusHandlerFunc: ", r.Method)
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	w.Header().Add("X-Frame-Options", "DENY")
-	w.Header().Add("Content-Security-Policy", "default-src 'self'")
-	w.Header().Add("X-Content-Type-Options", "nosniff")
-	userCookie, err := r.Cookie("SessionCookie") // Try to grab the cookie named SessionCookie
-	if err == http.ErrNoCookie {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("No cookie"))
-		log.Println(err)
-		return
-	}
-	if err != http.ErrNoCookie && err != nil {
-		log.Println(err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
+func statusHandlerFunc(w *http.ResponseWriter, r *http.Request, userCookie *http.Cookie, roomName string) {
 	userUUID, err := uuid.Parse(userCookie.Value)
 	if err != nil {
 		log.Println(err)
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	roomName := r.URL.Query().Get("sala")
-	if roomName == "" {
-		log.Println("Não foi passado o nome da sala")
-		w.WriteHeader(http.StatusBadRequest)
+		(*w).WriteHeader(http.StatusBadRequest)
 		return
 	}
 	room, exists := rooms[roomName]
 	if !exists {
 		log.Println("A sala não existe")
-		w.WriteHeader(http.StatusBadRequest)
+		(*w).WriteHeader(http.StatusBadRequest)
 		return
 	}
 	for i, v := range room.users {
 		if v.uuid == userUUID {
 			upgrader.CheckOrigin = func(r *http.Request) bool { return true }
-			c, err := upgrader.Upgrade(w, r, nil)
+			c, err := upgrader.Upgrade(*w, r, nil)
 			if err != nil {
 				log.Println(err)
 				return
 			}
-			//reader(c)
+			// Write channel
 			var write chan []byte
 			if room.users[-i+1].dead == nil {
 				write = make(chan []byte)
@@ -289,6 +259,7 @@ func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
 			} else {
 				write = room.users[-i+1].dead
 			}
+			// Read channel
 			var read chan []byte
 			if room.users[i].dead == nil {
 				read = make(chan []byte)
@@ -321,17 +292,21 @@ func writePump(conn *websocket.Conn, write chan []byte) {
 func readPump(conn *websocket.Conn, read chan []byte) {
 	for {
 		mt, message, err := conn.ReadMessage()
+		log.Println(mt)
 		if err != nil {
 			log.Println(err)
 			return
 		}
 		if mt == websocket.TextMessage {
+			log.Println(message)
 			b, err := base64.StdEncoding.DecodeString(string(message))
 			if err != nil {
 				log.Println(err)
 				return
 			}
+			log.Println(b)
 			read <- b
+			log.Println("okay")
 		}
 	}
 }
