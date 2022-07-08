@@ -273,7 +273,7 @@ func statusHandlerFunc(w *http.ResponseWriter, r *http.Request, userCookie *http
 	}
 }
 
-func writePump(conn *websocket.Conn, write chan []byte) {
+func writePump(conn *websocket.Conn, write <-chan []byte) {
 	for {
 		dead := <-write
 		w, err := conn.NextWriter(websocket.TextMessage)
@@ -289,24 +289,20 @@ func writePump(conn *websocket.Conn, write chan []byte) {
 	}
 }
 
-func readPump(conn *websocket.Conn, read chan []byte) {
+func readPump(conn *websocket.Conn, read chan<- []byte) {
 	for {
 		mt, message, err := conn.ReadMessage()
-		log.Println(mt)
 		if err != nil {
 			log.Println(err)
 			return
 		}
 		if mt == websocket.TextMessage {
-			log.Println(message)
 			b, err := base64.StdEncoding.DecodeString(string(message))
 			if err != nil {
 				log.Println(err)
 				return
 			}
-			log.Println(b)
 			read <- b
-			log.Println("okay")
 		}
 	}
 }
