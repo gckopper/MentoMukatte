@@ -220,8 +220,7 @@ func deleteHandlerFunc(w *http.ResponseWriter, r *http.Request) {
 		for _, v := range room.users {
 			if v.uuid == userUUID {
 				delete(rooms, room.name)
-				(*w).WriteHeader(http.StatusTemporaryRedirect)
-				(*w).Header().Set("Location", fmt.Sprint("/sala=", room.name))
+				(*w).WriteHeader(http.StatusOK)
 				return
 			}
 		}
@@ -236,7 +235,7 @@ var upgrader = websocket.Upgrader{
 }
 
 func statusHandlerFunc(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
+	if r.Method != "GET" {
 		log.Println("Method not allowed in statusHandlerFunc: ", r.Method)
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
