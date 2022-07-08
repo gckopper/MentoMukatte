@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/rand"
-	"encoding/base64"
 	"flag"
 	"fmt"
 	"html/template"
@@ -33,7 +32,7 @@ type Cards struct {
 	Images   [24]string
 }
 
-var rooms = make(map[string]Room)
+var rooms = make(map[string]*Room)
 
 func main() {
 	port := flag.Int("p", 3669, "Port in which the game server will listen")
@@ -141,7 +140,7 @@ func roomHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 			return
 		}
 	} else {
-		room = Room{
+		room = &Room{
 			name:   roomName,
 			users:  [2]User{},
 			images: [24]string{},
@@ -202,7 +201,6 @@ func roomHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 		return
 	}
 	rooms[room.name] = room
-
 }
 
 func deleteHandlerFunc(w *http.ResponseWriter, r *http.Request, userCookie *http.Cookie) {
@@ -274,6 +272,9 @@ func statusHandlerFunc(w *http.ResponseWriter, r *http.Request, userCookie *http
 }
 
 func writePump(conn *websocket.Conn, write <-chan []byte) {
+	defer func() {
+		conn.Close()
+	}()
 	for {
 		dead := <-write
 		w, err := conn.NextWriter(websocket.TextMessage)
@@ -281,7 +282,7 @@ func writePump(conn *websocket.Conn, write <-chan []byte) {
 			log.Println(err)
 			return
 		}
-		w.Write([]byte(base64.StdEncoding.EncodeToString(dead)))
+		w.Write(dead)
 		if err := w.Close(); err != nil {
 			log.Println(err)
 			return
@@ -290,6 +291,9 @@ func writePump(conn *websocket.Conn, write <-chan []byte) {
 }
 
 func readPump(conn *websocket.Conn, read chan<- []byte) {
+	defer func() {
+		conn.Close()
+	}()
 	for {
 		mt, message, err := conn.ReadMessage()
 		if err != nil {
@@ -297,12 +301,7 @@ func readPump(conn *websocket.Conn, read chan<- []byte) {
 			return
 		}
 		if mt == websocket.TextMessage {
-			b, err := base64.StdEncoding.DecodeString(string(message))
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			read <- b
+			read <- message
 		}
 	}
 }
