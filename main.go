@@ -163,6 +163,7 @@ func roomHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 		for i := range room.images {
 			room.images[i] = images[i].Name()
 		}
+		rooms[room.name] = room
 	}
 	if alreadyUser {
 		cards = Cards{
@@ -200,7 +201,6 @@ func roomHandlerFunc(w *http.ResponseWriter, r *http.Request, usercookie *http.C
 		(*w).WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	rooms[room.name] = room
 }
 
 func deleteHandlerFunc(w *http.ResponseWriter, r *http.Request, userCookie *http.Cookie) {
